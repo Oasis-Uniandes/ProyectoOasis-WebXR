@@ -44,5 +44,5 @@ pids/
 .vscode/mcp.json
 .codex/config.toml
 
-# Escena guardada desde el panel de control
+# Capturas de verificación del emulador
 artifacts/

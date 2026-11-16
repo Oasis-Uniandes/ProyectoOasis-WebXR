@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "savedAt": "2026-11-16T04:20:44.823Z",
+  "objects": [
+    {
+      "id": "simple-cube",
+      "name": "Simple Cube",
+      "shape": "cube",
+      "color": "#e63946",
+      "size": 0.1,
+      "position": [
+        -0.25,
+        1.1,
+        -0.5
+      ],
+      "quaternion": [
+        0,
+        0.383,
+        0,
+        0.924
+      ],
+      "scale": [
+        1.5,
+        1,
+        1
+      ],
+      "dims": [
+        0.177,
+        0.1,
+        0.177
+      ],
+      "factor": 1.5,
+      "rotationDeg": 45,
+      "remote": false,
+      "grabbed": false
+    },
+    {
+      "id": "simple-sphere",
+      "name": "Simple Sphere",
+      "shape": "sphere",
+      "color": "#2a9d8f",
+      "size": 0.1,
+      "position": [
+        0,
+        1,
+        -0.5
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "dims": [
+        0.1,
+        0.1,
+        0.1
+      ],
+      "factor": 1,
+      "rotationDeg": 0,
+      "remote": false,
+      "grabbed": false
+    },
+    {
+      "id": "simple-cylinder",
+      "name": "Simple Cylinder",
+      "shape": "cylinder",
+      "color": "#3a86ff",
+      "size": 0.1,
+      "position": [
+        0.2,
+        1,
+        -0.5
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "dims": [
+        0.1,
+        0.1,
+        0.1
+      ],
+      "factor": 1,
+      "rotationDeg": 0,
+      "remote": false,
+      "grabbed": false
+    },
+    {
+      "id": "t-ring",
+      "name": "Aro guardado",
+      "shape": "torus",
+      "color": "#8338ec",
+      "size": 0.12,
+      "position": [
+        0,
+        1.068,
+        -0.5
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "dims": [
+        0.115,
+        0.031,
+        0.115
+      ],
+      "factor": 1,
+      "rotationDeg": 0,
+      "remote": true,
+      "grabbed": false
+    }
+  ]
+}

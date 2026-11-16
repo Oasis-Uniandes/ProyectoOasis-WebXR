@@ -1,0 +1,50 @@
+[
+  {
+    "key": "polyhaven-chess_set",
+    "source": "polyhaven",
+    "id": "chess_set",
+    "name": "Chess Set",
+    "thumb": "https://cdn.polyhaven.com/asset_img/thumbs/chess_set.png?width=256&height=256",
+    "model": {
+      "url": "__oasis/models/polyhaven-chess_set/chess_set_1k.gltf",
+      "credit": "«Chess Set» de Riley Queen · Poly Haven · CC0"
+    },
+    "importedAt": "2026-11-16T06:26:30.663Z"
+  },
+  {
+    "key": "polyhaven-potted_plant_02",
+    "source": "polyhaven",
+    "id": "potted_plant_02",
+    "name": "Potted Plant 02",
+    "thumb": "https://cdn.polyhaven.com/asset_img/thumbs/potted_plant_02.png?width=256&height=256",
+    "model": {
+      "url": "__oasis/models/polyhaven-potted_plant_02/potted_plant_02_1k.gltf",
+      "credit": "«Potted Plant 02» de Rico Cilliers · Poly Haven · CC0"
+    },
+    "importedAt": "2026-11-16T06:22:48.500Z"
+  },
+  {
+    "key": "polyhaven-tree_small_02",
+    "source": "polyhaven",
+    "id": "tree_small_02",
+    "name": "Tree Small 02",
+    "thumb": "https://cdn.polyhaven.com/asset_img/thumbs/tree_small_02.png?width=256&height=256",
+    "model": {
+      "url": "__oasis/models/polyhaven-tree_small_02/tree_small_02_1k.gltf",
+      "credit": "«Tree Small 02» de Rico Cilliers · Poly Haven · CC0"
+    },
+    "importedAt": "2026-11-16T06:22:48.425Z"
+  },
+  {
+    "key": "polyhaven-rubber_duck_toy",
+    "source": "polyhaven",
+    "id": "rubber_duck_toy",
+    "name": "Rubber Duck Toy",
+    "thumb": "https://cdn.polyhaven.com/asset_img/thumbs/rubber_duck_toy.png?width=256&height=256",
+    "model": {
+      "url": "__oasis/models/polyhaven-rubber_duck_toy/rubber_duck_toy_1k.gltf",
+      "credit": "«Rubber Duck Toy» de Plat251 · Poly Haven · CC0"
+    },
+    "importedAt": "2026-11-16T06:16:52.701Z"
+  }
+]

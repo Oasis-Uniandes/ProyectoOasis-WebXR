@@ -7,9 +7,11 @@
 
 import { iwsdkDev } from '@iwsdk/vite-plugin-dev';
 import { defineConfig } from 'vite';
+// Panel de control (control.html): relay casco ⇄ PC, guardado e IA. Solo en dev.
+import { oasisDevServer } from './server/oasis-dev-server';
 
 export default defineConfig({
-  plugins: [iwsdkDev()],
+  plugins: [iwsdkDev(), oasisDevServer()],
   server: { host: '0.0.0.0', port: 8081, open: false },
   build: {
     outDir: 'dist',

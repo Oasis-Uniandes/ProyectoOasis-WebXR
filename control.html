@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="data:," />
+    <title>Oasis · Control de escena</title>
+    <script>
+      // Tema antes de pintar para evitar el parpadeo.
+      try {
+        const t = localStorage.getItem('oasis-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="/src/control/control.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <div>
+          <h1>Oasis</h1>
+          <p>Arma tu escena aquí y mírala en el casco</p>
+        </div>
+      </div>
+
+      <div class="status" id="connection" data-state="waiting" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="status-text">
+          <strong id="connection-title">Buscando el casco…</strong>
+          <span id="connection-detail">Abre la app en el Quest</span>
+        </span>
+      </div>
+
+      <div class="top-actions">
+        <button class="btn toggle-btn emu-btn" id="emulator-toggle" type="button" aria-pressed="true"
+          title="El emulador es un Quest simulado que corre en este computador">
+          <span data-icon="monitor" data-size="16"></span><span id="emulator-label">Emulador</span>
+        </button>
+        <button class="btn icon-only ghost" id="theme" type="button" aria-label="Cambiar a tema claro" title="Cambiar tema">
+          <span data-icon="sun"></span>
+        </button>
+        <button class="btn ghost" type="button" popovertarget="help" title="Ayuda y atajos (?)">
+          <span data-icon="help"></span><span>Ayuda</span>
+        </button>
+        <div class="save-group">
+          <span class="save-status" id="save-status" aria-live="polite"></span>
+          <button class="btn primary" id="save" type="button" title="Guardar escena (Ctrl+S)">
+            <span data-icon="save"></span><span>Guardar</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <!-- ===================================================== Añadir -->
+      <section class="col" aria-labelledby="h-add">
+        <section class="panel add">
+          <header class="panel-head">
+            <h2 id="h-add"><span class="head-icon add-icon" aria-hidden="true"><span data-icon="plus" data-size="16"></span></span>Añadir un objeto</h2>
+          </header>
+
+          <fieldset class="field">
+            <legend><span class="step">1</span>Elige la forma</legend>
+            <div class="shape-grid" id="shape-grid" role="radiogroup" aria-label="Forma"></div>
+            <div class="chosen-model" id="chosen-model" hidden>
+              <span class="chosen-thumb" id="chosen-thumb" aria-hidden="true"></span>
+              <div class="chosen-text">
+                <strong id="chosen-name"></strong>
+                <span class="hint small" id="chosen-credit"></span>
+              </div>
+              <button type="button" class="btn ghost small" id="chosen-clear" title="Volver a las formas básicas">Quitar</button>
+            </div>
+            <button type="button" class="btn wide library-btn" id="open-library">
+              <span data-icon="library"></span>Más modelos 3D: buscar o subir
+            </button>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend><span class="step">2</span><span id="step2-label">Elige color y tamaño</span></legend>
+            <div class="swatches" id="add-swatches" role="radiogroup" aria-label="Color del nuevo objeto"></div>
+            <p class="hint small" id="model-color-note" hidden>Los modelos conservan sus colores originales.</p>
+            <label class="slider">
+              <span>Tamaño</span>
+              <input type="range" id="add-size" min="3" max="40" step="1" value="10" />
+              <output id="add-size-out" for="add-size">10 cm</output>
+            </label>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend><span class="step">3</span>Pulsa dónde ponerlo</legend>
+            <p class="hint" id="anchor-hint"></p>
+            <div class="place-pad" id="add-pad">
+              <button type="button" data-side="back" class="btn pad back">Detrás</button>
+              <button type="button" data-side="left" class="btn pad left">Izquierda</button>
+              <button type="button" data-side="top" class="btn pad top primary">Encima</button>
+              <button type="button" data-side="right" class="btn pad right">Derecha</button>
+              <button type="button" data-side="front" class="btn pad front">Delante</button>
+              <span class="pad-you" aria-hidden="true"><span data-icon="headset" data-size="16"></span>Tú con el casco</span>
+            </div>
+            <button type="button" class="btn wide" data-side="viewer" id="add-viewer">
+              <span data-icon="headset"></span>Ponerlo frente al casco
+            </button>
+          </fieldset>
+        </section>
+      </section>
+
+      <!-- ===================================================== Editar -->
+      <section class="col" aria-labelledby="h-edit">
+        <section class="panel edit">
+          <header class="panel-head">
+            <h2 id="h-edit"><span class="head-icon" aria-hidden="true"><span data-icon="move" data-size="16"></span></span>Editar un objeto</h2>
+            <button class="btn ghost small" id="undo" type="button" title="Deshacer (Ctrl+Z)">
+              <span data-icon="undo" data-size="16"></span><span>Deshacer</span>
+            </button>
+          </header>
+
+          <div class="field">
+            <p class="legend"><span class="step">1</span>Elige cuál <span class="count" id="object-count" aria-label="Número de objetos">0</span></p>
+            <ul id="object-list" class="object-list" aria-label="Objetos de la escena"></ul>
+            <div class="empty-state" id="list-empty">
+              <p class="empty-title">Aún no hay casco conectado</p>
+              <ol class="steps">
+                <li>Conecta el Quest a la misma red Wi-Fi que este computador.</li>
+                <li>Abre en el casco la dirección que muestra <code>npm run dev</code>.</li>
+                <li>Pulsa <b>Entrar en AR</b>. Tus objetos aparecerán aquí.</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="field">
+            <p class="legend"><span class="step">2</span>Cámbialo</p>
+
+            <div id="edit-empty" class="empty-state compact">
+              <span class="empty-icon" aria-hidden="true"><span data-icon="target" data-size="24"></span></span>
+              <p>Toca un objeto de la lista de arriba o del visor 3D. En el casco brillará para que sepas cuál es.</p>
+            </div>
+
+            <div id="edit-body" hidden>
+              <div class="identity">
+                <span class="chip big" id="edit-chip" aria-hidden="true"></span>
+                <div class="identity-text">
+                  <label class="sr-only" for="edit-name">Nombre</label>
+                  <input class="name-input" id="edit-name" maxlength="40" spellcheck="false" title="Cambiar el nombre" />
+                  <p class="meta" id="edit-meta"></p>
+                </div>
+              </div>
+
+              <section class="group" aria-labelledby="h-move">
+                <h3 id="h-move">Mover</h3>
+                <div class="move-grid">
+                  <div class="dpad" role="group" aria-label="Mover respecto a quien lleva el casco">
+                    <button type="button" class="btn up" data-move="toward:-1" title="Más lejos (↑)"><span data-icon="up" data-size="16"></span>Más lejos</button>
+                    <button type="button" class="btn left" data-move="right:-1" title="Izquierda (←)"><span data-icon="left" data-size="16"></span>Izq.</button>
+                    <span class="dpad-center" aria-hidden="true"><span data-icon="headset" data-size="16"></span></span>
+                    <button type="button" class="btn right" data-move="right:1" title="Derecha (→)">Der.<span data-icon="right" data-size="16"></span></button>
+                    <button type="button" class="btn down" data-move="toward:1" title="Más cerca (↓)"><span data-icon="down" data-size="16"></span>Más cerca</button>
+                  </div>
+                  <div class="vpad">
+                    <button type="button" class="btn" data-move="up:1" title="Subir (Re Pág)"><span data-icon="raise" data-size="16"></span>Subir</button>
+                    <button type="button" class="btn" data-move="up:-1" title="Bajar (Av Pág)"><span data-icon="lower" data-size="16"></span>Bajar</button>
+                  </div>
+                </div>
+                <div class="step-row">
+                  <span class="hint small">Cada toque mueve</span>
+                  <div class="segmented" id="step-select" role="radiogroup" aria-label="Cuánto se mueve en cada toque">
+                    <button type="button" role="radio" data-step="0.005" aria-checked="false">½ cm</button>
+                    <button type="button" role="radio" data-step="0.01" aria-checked="true" class="on">1 cm</button>
+                    <button type="button" role="radio" data-step="0.05" aria-checked="false">5 cm</button>
+                    <button type="button" role="radio" data-step="0.1" aria-checked="false">10 cm</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="group" aria-labelledby="h-rot">
+                <h3 id="h-rot">Girar</h3>
+                <div class="row tight">
+                  <button type="button" class="btn" data-rotate="-15" title="Girar a la izquierda ([)"><span data-icon="rotateCcw" data-size="16"></span>Izquierda</button>
+                  <button type="button" class="btn" data-rotate="15" title="Girar a la derecha (])"><span data-icon="rotate" data-size="16"></span>Derecha</button>
+                  <button type="button" class="btn" id="reset-rotation" title="Dejarlo recto, sin inclinación"><span data-icon="level" data-size="16"></span>Enderezar</button>
+                </div>
+              </section>
+
+              <section class="group" aria-labelledby="h-scale">
+                <h3 id="h-scale">Tamaño</h3>
+                <div class="slider with-out">
+                  <span class="hint small">Pequeño</span>
+                  <input type="range" id="edit-scale" min="0.25" max="4" step="0.05" value="1" aria-labelledby="h-scale" />
+                  <span class="hint small">Grande</span>
+                  <output id="edit-scale-out" for="edit-scale">×1,00</output>
+                </div>
+              </section>
+
+              <section class="group" aria-labelledby="h-color">
+                <h3 id="h-color">Color</h3>
+                <div class="swatches" id="edit-swatches" role="radiogroup" aria-labelledby="h-color"></div>
+              </section>
+
+              <section class="group" aria-labelledby="h-place">
+                <h3 id="h-place">Ponerlo junto a otro objeto</h3>
+                <div class="row tight place-row">
+                  <select id="place-side" aria-label="Lado">
+                    <option value="top">Encima de</option>
+                    <option value="left">A la izquierda de</option>
+                    <option value="right">A la derecha de</option>
+                    <option value="front">Delante de</option>
+                    <option value="back">Detrás de</option>
+                  </select>
+                  <select id="place-anchor" aria-label="Objeto de referencia"></select>
+                  <button type="button" class="btn" id="place-go">Colocar</button>
+                </div>
+              </section>
+
+              <details class="group precise">
+                <summary>Ajuste preciso <span class="hint small">medidas exactas</span></summary>
+                <div class="precise-body">
+                  <p class="hint small">Posición en centímetros. «Altura» es la distancia al suelo. Escribe un número y pulsa Enter.</p>
+                  <div class="xyz">
+                    <label><span>Izq. / der.</span><input type="number" step="1" id="pos-x" /></label>
+                    <label><span>Altura</span><input type="number" step="1" id="pos-y" /></label>
+                    <label><span>Fondo</span><input type="number" step="1" id="pos-z" /></label>
+                  </div>
+                  <div class="xyz two">
+                    <label><span>Giro (°)</span><input type="number" step="15" id="rot-y" /></label>
+                    <label><span>Tamaño (×)</span><input type="number" min="0.25" max="4" step="0.05" id="edit-scale-num" /></label>
+                  </div>
+                </div>
+              </details>
+
+              <div class="row tight actions">
+                <button class="btn" id="duplicate" type="button" title="Duplicar (D)"><span data-icon="copy" data-size="16"></span>Duplicar</button>
+                <button class="btn danger" id="delete" type="button" title="Eliminar (Supr)"><span data-icon="trash" data-size="16"></span>Eliminar</button>
+                <button class="btn ghost" id="deselect" type="button" title="Terminar de editar (Esc)"><span data-icon="check" data-size="16"></span>Listo</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- ===================================================== Visor + IA -->
+      <section class="col col-right" aria-label="Visor 3D e ideas">
+        <section class="panel viewport-panel" aria-label="Visor 3D">
+          <div class="viewport-toolbar" role="toolbar" aria-label="Herramientas del visor">
+            <div class="segmented tools" id="gizmo-mode" role="radiogroup" aria-label="Qué hacer al arrastrar">
+              <button type="button" role="radio" aria-checked="true" data-mode="translate" class="on" title="Arrastra las flechas para mover (W)"><span data-icon="move" data-size="16"></span>Mover</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="rotate" title="Arrastra los aros para girar (E)"><span data-icon="rotate" data-size="16"></span>Girar</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="scale" title="Arrastra para cambiar el tamaño (R)"><span data-icon="scale" data-size="16"></span>Tamaño</button>
+            </div>
+            <button type="button" class="btn toggle-btn" id="snap" aria-pressed="false" title="Mover en pasos de 1 cm y girar de 15° en 15°"><span data-icon="magnet" data-size="16"></span>Pasos fijos</button>
+            <button type="button" class="btn toggle-btn" id="isolate" aria-pressed="false" title="Ocultar los demás objetos en el visor"><span data-icon="eye" data-size="16"></span>Ver solo este</button>
+            <button type="button" class="btn ghost" id="focus" title="Acercar la cámara al objeto (F)"><span data-icon="focus" data-size="16"></span>Centrar vista</button>
+          </div>
+          <div class="viewport" id="viewport">
+            <div class="viewport-hint" id="viewport-hint"></div>
+            <div class="viewport-legend" aria-hidden="true">
+              <span><i class="lg-head"></i>Casco</span>
+              <span><i class="lg-plane"></i>Mesas y paredes reales</span>
+              <span class="muted">Arrastra el fondo para girar la vista · rueda para acercar</span>
+            </div>
+            <div class="viewport-empty" id="viewport-empty">
+              <span data-icon="headset" data-size="32"></span>
+              <p>Aquí verás la escena en 3D en cuanto el casco se conecte.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel ai-panel" aria-labelledby="h-ai">
+          <header class="panel-head">
+            <h2 id="h-ai"><span class="head-icon ai-icon" aria-hidden="true"><span data-icon="sparkles" data-size="16"></span></span>Descríbelo con tus palabras</h2>
+            <span class="hint small" id="ai-context"></span>
+          </header>
+          <div class="ai-input">
+            <label class="sr-only" for="ai-prompt">Describe lo que quieres crear o cambiar</label>
+            <textarea id="ai-prompt" rows="2"
+              placeholder="Ej.: pon una torre de tres cubos de colores encima de la mesa y una esfera dorada arriba"></textarea>
+            <button class="btn primary" id="ai-go" type="button" title="Generar (Ctrl+Enter)">
+              <span data-icon="sparkles" data-size="16"></span><span id="ai-go-label">Crear</span>
+            </button>
+          </div>
+          <div class="chips" id="ai-chips" aria-label="Ideas de ejemplo"></div>
+          <div class="ai-result" id="ai-result" hidden></div>
+        </section>
+      </section>
+    </main>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <dialog id="library" class="library" aria-labelledby="h-lib">
+      <header class="panel-head">
+        <h2 id="h-lib"><span class="head-icon add-icon" aria-hidden="true"><span data-icon="library" data-size="16"></span></span>Biblioteca de modelos 3D</h2>
+        <button class="btn icon-only ghost" type="button" id="library-close" aria-label="Cerrar biblioteca"><span data-icon="close"></span></button>
+      </header>
+
+      <div class="segmented lib-tabs" role="tablist" aria-label="Origen de los modelos">
+        <button type="button" role="tab" data-source="polyhaven" aria-selected="true" class="on">Poly Haven<small>gratis</small></button>
+        <button type="button" role="tab" data-source="sketchfab" aria-selected="false">Sketchfab</button>
+        <button type="button" role="tab" data-source="mine" aria-selected="false">Mis modelos</button>
+      </div>
+
+      <form class="lib-search" id="lib-search" role="search">
+        <label class="sr-only" for="lib-q">Buscar modelos</label>
+        <input type="search" id="lib-q" placeholder="Busca en inglés: chair, lamp, plant, table…" autocomplete="off" />
+        <button class="btn primary" type="submit"><span data-icon="search" data-size="16"></span>Buscar</button>
+      </form>
+      <p class="lib-note" id="lib-note" hidden></p>
+
+      <label class="dropzone" id="dropzone" hidden>
+        <input type="file" id="lib-file" accept=".glb,.gltf" hidden />
+        <span data-icon="upload" data-size="28"></span>
+        <strong>Arrastra aquí un archivo .glb</strong>
+        <span class="hint small">o haz clic para elegirlo · máximo 60 MB</span>
+      </label>
+
+      <div class="lib-grid" id="lib-grid" aria-live="polite"></div>
+      <p class="lib-foot hint small">Elige un modelo y luego, en el panel, pulsa dónde ponerlo. Guardamos el crédito de cada autor: algunas licencias lo exigen.</p>
+    </dialog>
+
+    <div class="drop-overlay" id="drop-overlay" hidden>
+      <span data-icon="upload" data-size="40"></span>
+      <strong>Suelta el archivo .glb para añadirlo a tus modelos</strong>
+    </div>
+
+    <div id="help" popover class="help-pop" aria-labelledby="h-help">
+      <header class="panel-head">
+        <h2 id="h-help"><span data-icon="help" data-size="18"></span>Ayuda</h2>
+        <button class="btn icon-only ghost" type="button" popovertarget="help" popovertargetaction="hide" aria-label="Cerrar ayuda"><span data-icon="close"></span></button>
+      </header>
+      <div class="help-grid">
+        <section>
+          <h3>Cómo funciona</h3>
+          <ol class="help-list">
+            <li><b>Añadir:</b> elige forma, color y tamaño, y pulsa dónde quieres el objeto.</li>
+            <li><b>Editar:</b> elige un objeto de la lista y usa los botones para moverlo, girarlo o cambiarle el color.</li>
+            <li><b>Visor 3D:</b> también puedes tocar un objeto y arrastrar las flechas de colores.</li>
+            <li><b>Con palabras:</b> escribe lo que imaginas y pulsa <b>Crear</b>.</li>
+            <li><b>Guardar:</b> el casco recupera la escena la próxima vez que abras la app.</li>
+          </ol>
+          <p class="hint">«Izquierda», «derecha» y «delante» son siempre desde el punto de vista de quien lleva el casco. Todo se ve en el casco al instante.</p>
+        </section>
+        <section>
+          <h3>Atajos de teclado</h3>
+          <dl class="keys">
+            <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Mover</dd>
+            <dt><kbd>Re Pág</kbd> <kbd>Av Pág</kbd></dt><dd>Subir / bajar</dd>
+            <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Girar</dd>
+            <dt><kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd></dt><dd>Mover, girar o cambiar tamaño en el visor</dd>
+            <dt><kbd>F</kbd></dt><dd>Centrar la vista</dd>
+            <dt><kbd>D</kbd></dt><dd>Duplicar</dd>
+            <dt><kbd>Supr</kbd></dt><dd>Eliminar</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Terminar de editar</dd>
+            <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Deshacer</dd>
+            <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>Guardar</dd>
+          </dl>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="/src/control/control.ts"></script>
+  </body>
+</html>

@@ -10,6 +10,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import './grab-rotation-fix.js';
 import { SurfaceSnapSystem } from './surface-snap.js';
 import { UniformGrabScaleSystem } from './uniform-grab-scale.js';
+import { RemoteEditSystem } from './remote-edit-system.js';
 
 World.create(
   document.getElementById('scene-container') as HTMLDivElement,
@@ -17,4 +18,5 @@ World.create(
 ).then((world) => {
   world.registerSystem(UniformGrabScaleSystem);
   world.registerSystem(SurfaceSnapSystem);
+  world.registerSystem(RemoteEditSystem);
 });

@@ -9,9 +9,11 @@ import {
   Box3,
   createSystem,
   Entity,
+  Euler,
   Grabbed,
   Matrix4,
-  OneHandGrabbable,
+  Object3D,
+  Quaternion,
   Vector3,
   XRPlane,
 } from '@iwsdk/core';
@@ -19,206 +21,231 @@ import {
 /**
  * Distancia máxima en metros entre la base de un objeto y un plano
  * horizontal para que se active el ajuste automático sobre la superficie.
+ * Si el objeto se suelta más lejos de cualquier superficie, se queda flotando.
  */
 export const SNAP_DISTANCE_METERS = 0.15;
 
+/** Duración en segundos de la animación de asentado sobre la superficie. */
+export const SETTLE_DURATION_SECONDS = 0.3;
+
+/** Tolerancia en metros por debajo del plano (objeto ligeramente hundido). */
+const BELOW_TOLERANCE_METERS = 0.05;
+
+/** |Y| mínima de la normal mundial para considerar un plano horizontal. */
+const MIN_HORIZONTAL_NORMAL_Y = 0.7;
+
+/** Estado de una animación de asentado (posición y rotación locales). */
+interface SettleAnimation {
+  active: boolean;
+  elapsed: number;
+  startPos: Vector3;
+  targetPos: Vector3;
+  startQuat: Quaternion;
+  targetQuat: Quaternion;
+}
+
 export class SurfaceSnapSystem extends createSystem({
-  grabbables: { required: [OneHandGrabbable] },
-  grabbedEntities: { required: [OneHandGrabbable, Grabbed] },
+  grabbedEntities: { required: [Grabbed] },
   planeEntities: { required: [XRPlane] },
 }) {
-  private previouslyGrabbed = new Set<Entity>();
+  /** Objetos soltados en este frame; se procesan en el siguiente update(). */
+  private pendingRelease = new Set<Entity>();
+  /** Una animación reutilizable por entidad (se crea solo la primera vez). */
+  private animations = new Map<Entity, SettleAnimation>();
+
   private tempBox = new Box3();
-  private tempSize = new Vector3();
   private tempWorldPos = new Vector3();
+  private tempLocalPos = new Vector3();
+  private tempTarget = new Vector3();
   private tempPlaneNormal = new Vector3();
+  private tempPlaneQuat = new Quaternion();
+  private tempWorldQuat = new Quaternion();
+  private tempParentQuat = new Quaternion();
+  private tempUprightQuat = new Quaternion();
+  private tempEuler = new Euler(0, 0, 0, 'YXZ');
   private invPlaneMatrix = new Matrix4();
 
   init(): void {
-    // [DIAG-1] Al soltar un objeto (disqualify de Grabbed), se evalúa si encaja sobre un plano
-    this.queries.grabbedEntities.subscribe('disqualify', (entity) => {
-      console.log('[SnapDiag] DIAG-1 disqualify event fired for entity index=', entity.index);
-      if (entity.active && this.previouslyGrabbed.has(entity)) {
-        this.previouslyGrabbed.delete(entity);
-        this.snapToNearestHorizontalPlane(entity);
-      } else {
-        console.log('[SnapDiag] DIAG-1 skip: active=', entity.active, 'inPreviousSet=', this.previouslyGrabbed.has(entity));
-      }
-    });
+    // Al soltar (deja de tener Grabbed) se encola; se evalúa en el siguiente
+    // frame para que GrabSystem ya no vuelva a escribir la pose de la mano.
+    this.cleanupFuncs.push(
+      this.queries.grabbedEntities.subscribe('disqualify', (entity) => {
+        if (entity.active) this.pendingRelease.add(entity);
+      }),
+      // Si se vuelve a agarrar durante la animación, se cancela.
+      this.queries.grabbedEntities.subscribe('qualify', (entity) => {
+        this.pendingRelease.delete(entity);
+        const anim = this.animations.get(entity);
+        if (anim) anim.active = false;
+      }),
+    );
   }
 
-  update(): void {
-    const currentlyGrabbed = this.queries.grabbedEntities.entities;
-
-    // Detectar entidades que dejaron de estar agarradas en este frame
-    for (const entity of this.previouslyGrabbed) {
-      if (!currentlyGrabbed.has(entity)) {
-        console.log('[SnapDiag] DIAG-1b release detected in update() for entity index=', entity.index);
-        this.previouslyGrabbed.delete(entity);
-        if (entity.active) {
-          this.snapToNearestHorizontalPlane(entity);
-        }
+  update(delta: number): void {
+    for (const entity of this.pendingRelease) {
+      if (entity.active && !entity.hasComponent(Grabbed)) {
+        this.startSettleOnSurfaceBelow(entity);
       }
     }
+    this.pendingRelease.clear();
 
-    for (const entity of currentlyGrabbed) {
-      this.previouslyGrabbed.add(entity);
+    for (const [entity, anim] of this.animations) {
+      if (!anim.active) continue;
+      const obj = entity.object3D;
+      if (!entity.active || !obj) {
+        anim.active = false;
+        continue;
+      }
+      anim.elapsed += delta;
+      const t = Math.min(anim.elapsed / SETTLE_DURATION_SECONDS, 1);
+      const eased = 1 - (1 - t) * (1 - t) * (1 - t); // ease-out cúbico
+      obj.position.lerpVectors(anim.startPos, anim.targetPos, eased);
+      obj.quaternion.slerpQuaternions(anim.startQuat, anim.targetQuat, eased);
+      if (t >= 1) anim.active = false;
     }
   }
 
   /**
-   * Evalúa la posición del objeto respecto a los planos horizontales detectados
-   * y ajusta su posición y orientación si cumple con la distancia umbral.
+   * Busca el plano horizontal más cercano justo debajo del objeto (dentro de
+   * su polígono en X/Z y a menos de SNAP_DISTANCE_METERS) y anima el objeto
+   * hasta quedar recto, girado sobre su centro, con la base apoyada en él.
+   * Si no hay ninguno, no lo mueve y se queda flotando.
    */
-  private snapToNearestHorizontalPlane(entity: Entity): void {
+  private startSettleOnSurfaceBelow(entity: Entity): void {
     const obj = entity.object3D;
-    if (!obj) {
-      console.log('[SnapDiag] DIAG-3 no object3D on entity');
-      return;
-    }
+    if (!obj) return;
 
     obj.updateWorldMatrix(true, false);
-
-    // Calcular dimensiones del objeto y semialtura cuando está erguido
-    this.tempBox.setFromObject(obj);
-    this.tempBox.getSize(this.tempSize);
-    const halfHeight = this.tempSize.y / 2;
-
     obj.getWorldPosition(this.tempWorldPos);
 
-    // [DIAG-3] Posición base del objeto
-    const objBaseY = this.tempWorldPos.y - halfHeight;
-    console.log(
-      `[SnapDiag] DIAG-3 object centre worldY=${this.tempWorldPos.y.toFixed(4)} halfH=${halfHeight.toFixed(4)} baseY=${objBaseY.toFixed(4)}`,
-    );
+    // Rotación recta: se conserva solo el giro horizontal (yaw) del objeto.
+    obj.getWorldQuaternion(this.tempWorldQuat);
+    this.tempEuler.setFromQuaternion(this.tempWorldQuat, 'YXZ');
+    this.tempUprightQuat.setFromAxisAngle(Object3D.DEFAULT_UP, this.tempEuler.y);
+    // Pasar la rotación mundial recta a espacio local del padre.
+    if (obj.parent) {
+      obj.parent.getWorldQuaternion(this.tempParentQuat).invert();
+      this.tempUprightQuat.premultiply(this.tempParentQuat);
+    }
 
-    // [DIAG-2] Número de planos detectados
-    const planeEntities = [...this.queries.planeEntities.entities];
-    console.log(`[SnapDiag] DIAG-2 XRPlane entity count=${planeEntities.length}`);
+    // Distancia del centro a la base medida con el objeto YA recto
+    // (la caja del objeto inclinado es más alta y lo dejaría flotando).
+    const anim = this.getAnimation(entity);
+    anim.startQuat.copy(obj.quaternion);
+    obj.quaternion.copy(this.tempUprightQuat);
+    obj.updateWorldMatrix(false, true);
+    this.tempBox.setFromObject(obj);
+    obj.quaternion.copy(anim.startQuat);
+    obj.updateWorldMatrix(false, true);
 
-    let bestPlaneEntity: Entity | null = null;
-    let minDistance = Infinity;
-    let bestLocalTarget: Vector3 | null = null;
+    const centreToBase = this.tempWorldPos.y - this.tempBox.min.y;
+    const margin =
+      Math.max(
+        this.tempBox.max.x - this.tempBox.min.x,
+        this.tempBox.max.z - this.tempBox.min.z,
+      ) * 0.5;
 
-    for (const planeEntity of planeEntities) {
+    let bestPlane: Entity | null = null;
+    let bestSurfaceDistance = Infinity;
+
+    for (const planeEntity of this.queries.planeEntities.entities) {
       const planeMesh = planeEntity.object3D;
-      if (!planeMesh) {
-        console.log('[SnapDiag] DIAG-2 plane has no object3D, skipping');
-        continue;
-      }
-
-      // [DIAG-2] Altura mundial del plano
-      planeMesh.updateWorldMatrix(true, false);
-      const planeWorldPos = new Vector3();
-      planeMesh.getWorldPosition(planeWorldPos);
-
-      // Obtener el objeto nativo WebXR XRPlane
       const nativePlane = planeEntity.getValue(XRPlane, '_plane') as
         | globalThis.XRPlane
         | undefined;
+      if (!planeMesh || nativePlane?.orientation !== 'horizontal') continue;
 
-      const orientation = nativePlane?.orientation ?? '(no nativePlane)';
-      console.log(
-        `[SnapDiag] DIAG-2 plane index=${planeEntity.index} orientation=${orientation} worldY=${planeWorldPos.y.toFixed(4)} nativePlane=${nativePlane != null}`,
-      );
+      planeMesh.updateWorldMatrix(true, false);
+      // Altura mundial de la superficie del plano
+      const planeY = planeMesh.matrixWorld.elements[13];
 
-      // Solo planos horizontales
-      if (nativePlane?.orientation !== 'horizontal') {
-        console.log(`[SnapDiag] DIAG-4 SKIP orientation!='horizontal' (got '${orientation}')`);
-        continue;
-      }
+      // El plano debe ser horizontal en espacio mundial. El signo de la normal
+      // no es fiable: el Quest reporta mesas con el eje Y del plano hacia abajo.
+      // Los techos se descartan por altura (el objeto queda por debajo).
+      planeMesh.getWorldQuaternion(this.tempPlaneQuat);
+      this.tempPlaneNormal.set(0, 1, 0).applyQuaternion(this.tempPlaneQuat);
+      if (Math.abs(this.tempPlaneNormal.y) < MIN_HORIZONTAL_NORMAL_Y) continue;
 
-      // Comprobar que la normal del plano apunta hacia arriba (superficie de apoyo)
-      this.tempPlaneNormal.set(0, 1, 0).applyQuaternion(planeMesh.quaternion);
-      console.log(`[SnapDiag] DIAG-4 planeNormal.y=${this.tempPlaneNormal.y.toFixed(4)}`);
-      if (this.tempPlaneNormal.y < 0.7) {
-        console.log('[SnapDiag] DIAG-4 SKIP normal.y < 0.7');
-        continue;
-      }
-
-      // Convertir la posición del centro del objeto al espacio local del plano
+      // Centro del objeto en el espacio local del plano para comprobar X/Z
       this.invPlaneMatrix.copy(planeMesh.matrixWorld).invert();
-      const localPos = this.tempWorldPos.clone().applyMatrix4(this.invPlaneMatrix);
+      this.tempLocalPos.copy(this.tempWorldPos).applyMatrix4(this.invPlaneMatrix);
 
-      // Distancia desde la base del objeto hasta la superficie del plano (y = 0 en local)
-      const bottomDistance = localPos.y - halfHeight;
-      console.log(
-        `[SnapDiag] DIAG-4 localPos.y=${localPos.y.toFixed(4)} bottomDistance=${bottomDistance.toFixed(4)} threshold=[-0.05, ${SNAP_DISTANCE_METERS}]`,
-      );
+      // Primero X/Z: el objeto debe estar encima del polígono del plano
+      if (!this.isOverPolygon(nativePlane, this.tempLocalPos, margin)) continue;
 
-      // Debe estar a menos de SNAP_DISTANCE_METERS (y no excesivamente por debajo del plano)
-      if (bottomDistance < -0.05 || bottomDistance > SNAP_DISTANCE_METERS) {
-        console.log(`[SnapDiag] DIAG-4 SKIP bottomDistance out of range`);
+      // Después la altura mundial: base (recta) del objeto sobre la superficie
+      const bottomDistance = this.tempWorldPos.y - centreToBase - planeY;
+      if (
+        bottomDistance < -BELOW_TOLERANCE_METERS ||
+        bottomDistance > SNAP_DISTANCE_METERS
+      ) {
         continue;
       }
 
-      // Determinar límites del plano usando el polígono nativo de WebXR
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minZ = Infinity;
-      let maxZ = -Infinity;
-
-      if (nativePlane.polygon && nativePlane.polygon.length > 0) {
-        for (const pt of nativePlane.polygon) {
-          if (pt.x < minX) minX = pt.x;
-          if (pt.x > maxX) maxX = pt.x;
-          if (pt.z < minZ) minZ = pt.z;
-          if (pt.z > maxZ) maxZ = pt.z;
-        }
-        console.log(`[SnapDiag] DIAG-4 polygon bounds x=[${minX.toFixed(3)},${maxX.toFixed(3)}] z=[${minZ.toFixed(3)},${maxZ.toFixed(3)}]`);
-      } else {
-        console.log('[SnapDiag] DIAG-4 no polygon, using infinite fallback');
-        minX = -10; maxX = 10; minZ = -10; maxZ = 10;
-      }
-
-      // Margen de tolerancia equivalente al radio horizontal del objeto
-      const margin = Math.max(this.tempSize.x, this.tempSize.z) * 0.5;
-      const isOverPlane =
-        localPos.x >= minX - margin &&
-        localPos.x <= maxX + margin &&
-        localPos.z >= minZ - margin &&
-        localPos.z <= maxZ + margin;
-
-      console.log(
-        `[SnapDiag] DIAG-4 localX=${localPos.x.toFixed(3)} localZ=${localPos.z.toFixed(3)} margin=${margin.toFixed(3)} isOverPlane=${isOverPlane}`,
-      );
-
-      if (!isOverPlane) {
-        console.log('[SnapDiag] DIAG-4 SKIP not over plane polygon');
-        continue;
-      }
-
-      const absDist = Math.abs(bottomDistance);
-      if (absDist < minDistance) {
-        minDistance = absDist;
-        bestPlaneEntity = planeEntity;
-        // La base toca la superficie (y = 0), por lo que el centro queda a halfHeight
-        bestLocalTarget = new Vector3(localPos.x, halfHeight, localPos.z);
+      if (bottomDistance < bestSurfaceDistance) {
+        bestSurfaceDistance = bottomDistance;
+        bestPlane = planeEntity;
       }
     }
 
-    // [DIAG-4] Decisión final
-    if (bestPlaneEntity && bestLocalTarget) {
-      console.log(`[SnapDiag] DIAG-4 SNAP → snapping to plane, dist=${minDistance.toFixed(4)}`);
-      const planeMesh = bestPlaneEntity.object3D!;
-      // Convertir posición local de destino a coordenadas de mundo
-      const targetWorldPos = bestLocalTarget.applyMatrix4(planeMesh.matrixWorld);
+    if (!bestPlane) return;
 
-      // Colocar derecho (rotación erguida con normal hacia arriba)
-      obj.quaternion.set(0, 0, 0, 1);
-      obj.rotation.set(0, 0, 0);
+    // Destino: mismo centro en X/Z, base sobre la altura mundial del plano
+    const surfaceY = bestPlane.object3D!.matrixWorld.elements[13];
+    this.tempTarget.set(
+      this.tempWorldPos.x,
+      surfaceY + centreToBase,
+      this.tempWorldPos.z,
+    );
+    if (obj.parent) obj.parent.worldToLocal(this.tempTarget);
 
-      // Ajustar posición para que la base descanse sobre la superficie
-      if (obj.parent) {
-        obj.parent.worldToLocal(targetWorldPos);
-        obj.position.copy(targetWorldPos);
-      } else {
-        obj.position.copy(targetWorldPos);
-      }
+    anim.startPos.copy(obj.position);
+    anim.targetPos.copy(this.tempTarget);
+    anim.targetQuat.copy(this.tempUprightQuat);
+    anim.elapsed = 0;
+    anim.active = true;
+  }
 
-      obj.updateMatrixWorld(true);
-    } else {
-      console.log('[SnapDiag] DIAG-4 NO SNAP → no suitable plane found');
+  private getAnimation(entity: Entity): SettleAnimation {
+    let anim = this.animations.get(entity);
+    if (!anim) {
+      anim = {
+        active: false,
+        elapsed: 0,
+        startPos: new Vector3(),
+        targetPos: new Vector3(),
+        startQuat: new Quaternion(),
+        targetQuat: new Quaternion(),
+      };
+      this.animations.set(entity, anim);
     }
+    return anim;
+  }
+
+  /** Comprueba si (x, z) local cae dentro de los límites del polígono más un margen. */
+  private isOverPolygon(
+    plane: globalThis.XRPlane,
+    local: Vector3,
+    margin: number,
+  ): boolean {
+    const polygon = plane.polygon;
+    if (!polygon || polygon.length === 0) return false;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const pt of polygon) {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.z < minZ) minZ = pt.z;
+      if (pt.z > maxZ) maxZ = pt.z;
+    }
+    return (
+      local.x >= minX - margin &&
+      local.x <= maxX + margin &&
+      local.z >= minZ - margin &&
+      local.z <= maxZ + margin
+    );
   }
 }

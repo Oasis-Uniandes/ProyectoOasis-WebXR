@@ -44,7 +44,10 @@
         "position": [-0.2, 1.0, -0.5]
       },
       "components": {
-        "OneHandGrabbable": {}
+        "TwoHandsGrabbable": {
+          "scaleMin": [0.25, 0.25, 0.25],
+          "scaleMax": [4, 4, 4]
+        }
       }
     },
     {
@@ -60,7 +63,10 @@
         "position": [0, 1.0, -0.5]
       },
       "components": {
-        "OneHandGrabbable": {}
+        "TwoHandsGrabbable": {
+          "scaleMin": [0.25, 0.25, 0.25],
+          "scaleMax": [4, 4, 4]
+        }
       }
     },
     {
@@ -76,7 +82,10 @@
         "position": [0.2, 1.0, -0.5]
       },
       "components": {
-        "OneHandGrabbable": {}
+        "TwoHandsGrabbable": {
+          "scaleMin": [0.25, 0.25, 0.25],
+          "scaleMax": [4, 4, 4]
+        }
       }
     },
     {

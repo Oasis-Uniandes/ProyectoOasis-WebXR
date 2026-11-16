@@ -555,11 +555,11 @@ function renderConnection(): void {
   } else if (current.inXR) {
     conn.dataset.state = 'live';
     title.textContent = 'En vivo';
-    detail.textContent = `${current.device === 'quest' ? 'Meta Quest' : 'Navegador'} en AR · los cambios se ven al instante`;
+    detail.textContent = `${current.device === 'quest' ? 'Meta Quest' : 'Navegador'} en MR · los cambios se ven al instante`;
   } else {
     conn.dataset.state = 'idle';
-    title.textContent = 'Conectado, fuera de AR';
-    detail.textContent = 'Pulsa «Entrar en AR» en el casco';
+    title.textContent = 'Conectado, fuera de MR';
+    detail.textContent = 'Pulsa «Entrar en MR» en el casco';
   }
 }
 
